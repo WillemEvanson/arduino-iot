@@ -1,0 +1,87 @@
+Setup
+Download the Arduino IDE from https://www.arduino.cc/en/software/#ide
+
+Follow this for flashing instructions: http://www.hiletgo.com/ProductDetail/1906570.html
+You must add yourself to the dialout group if you wish to flash or view serial output.
+
+sudo usermod -aG dialout $user
+
+The port will likely be named something like ttyUSB_
+
+Libraries
+You need the ESP board manager:
+http://arduino.esp8266.com/stable/package_esp8266com_index.json
+
+
+You also need:
+- ArduinoBearSSL by Arduino
+- ArduinoECCX08 by Arduino
+- NTPClient by Fabrice
+- PubSubClient by Nick
+- TinyCBOR by TOKITA
+
+Packet Format Specification
+
+All packets are CBOR arrays of length 5, encoded in the order shown below. A final 32-byte HMAC signature is appended as the last field.
+
+General Layout
+[
+  type: uint,
+  device_id: text,
+  timestamp: uint,
+  value: (uint, bool, or double),
+  signature: bytes[32]
+]
+
+Message Types
+
+Type	Meaning	            Value Encoding
+1	    Temperature	        double
+2	    Motion	            bool
+3	    Door	            bool
+4	    Curtain Position	uint (0–100)
+
+The CBOR array is encoded with a placeholder 32-byte zero signature.
+
+After encoding, the buffer is hashed with HMAC-SHA256:
+
+hmac = HMAC_SHA256(key=HMAC_KEY, data = buf[0 : array_end - 32])
+
+The last 32 bytes of the buffer are overwritten with the computed HMAC.
+
+Verification (Receiving Side)
+
+Parse the array. Extract the signature. Compute HMAC over all bytes except the
+signature field. Compare computed signature to transmitted signature.
+
+If mismatch → reject packet.
+
+# Environment Assumptions
+The ESP8266 connects to a 2.4 GHz WiFi network defined by WIFI_SSID and
+WIFI_PASSWORD (by default "laptop" and "password" respectively).
+
+DHCP must provide the device with a valid IP address.
+
+Internet connectivity is required to reach "pool.ntp.org" for initial
+NTP time synchronization.
+
+MQTT broker is accessible at (I used Mosquitto):
+    Host: 10.42.0.1
+    Port: 1883
+    No TLS (plain MQTT).
+
+MQTT Topics Used
+
+Publishing (device → server):
+    blinds/door
+    blinds/temperature
+    blinds/motion
+    blinds/curtain (responses/acknowledgements)
+
+Subscribing (server → device):
+    blinds/commands
+    Expected to contain a type-1 (curtain control) packet.
+
+Device ID Assumptions
+The device identifies itself via MQTT_CLIENT_NAME for all outgoing packets.
+Maximum device ID length: 31 bytes (null-terminated into a 32-byte buffer on decode).
