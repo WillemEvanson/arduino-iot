@@ -21,7 +21,7 @@ const char *WIFI_PASSWORD = "password";
 
 const char *MQTT_CLIENT_NAME = "ESP8266Client";
 // const char *MQTT_SERVER_NAME = "10.42.0.1";  // original
-const char *MQTT_SERVER_NAME = "10.147.144.34";
+const char *MQTT_SERVER_NAME = "10.42.0.1";
 const int MQTT_PORT = 1883;
 
 WiFiUDP ntpUDP;
@@ -158,10 +158,19 @@ void apply_hmac_inplace(uint8_t *buf, size_t len)
   memcpy(buf + sig_offset, hmac_out, 32);
 }
 
+unsigned long update_interval = 1000;
+unsigned long prev_update_millis = 0;
+
+unsigned long curtain_update_interval = 500;
+unsigned long prev_curtain_millis = 0;
+uint64_t curtain_rate_per_second = 10;
+int64_t curtain_position = 0;
+int64_t curtain_target = 0;
+
+
 void callback(char *topic, uint8_t *payload, size_t payload_len)
 {
   // The only command we support here is changing the curtain position.
-
   CborParser parser;
   CborValue root, elem;
   cbor_parser_init(payload, payload_len, 0, &parser, &root);
@@ -200,6 +209,11 @@ void callback(char *topic, uint8_t *payload, size_t payload_len)
     return;
   }
 
+  if (type != 1) {
+    Serial.println("Received unexpected packet");
+    return;
+  }
+
   Serial.println("Received Packet:");
   Serial.print(" Type: ");
   Serial.println(type);
@@ -207,18 +221,13 @@ void callback(char *topic, uint8_t *payload, size_t payload_len)
   Serial.println(device_id);
   Serial.print(" Timestamp: ");
   Serial.println(timestamp);
-  Serial.print(" Value: ");
+  Serial.print(" Target Position: ");
   Serial.println(value);
 
   value = max((uint64_t)0, min((uint64_t)value, (uint64_t)100));
 
-  delay(5000);
-  uint64_t ts = timeClient.getEpochTime();
-  uint8_t cbor_buffer[192];
-  size_t cbor_len = encodeCurtain(cbor_buffer, sizeof(cbor_buffer), MQTT_CLIENT_NAME, ts, value);
-
-  apply_hmac_inplace(cbor_buffer, cbor_len);
-  MQTT_CLIENT.publish("blinds/curtain", cbor_buffer, cbor_len);
+  prev_curtain_millis = millis();
+  curtain_target = value;
 }
 
 void setup()
@@ -256,8 +265,8 @@ void setup()
   else
   {
     Serial.println("\nFailed to connect to Wi-Fi. Please check your credentials.");
-    while (true)
-    {
+    while (true) {
+      asm("");
     }
   }
 
@@ -285,38 +294,77 @@ void setup()
 
 void loop()
 {
-  Serial.println("Sending new packet");
-  uint64_t ts = timeClient.getEpochTime();
+  unsigned long current_millis = millis();
+  if (current_millis - prev_update_millis >= update_interval) {
+    prev_update_millis = current_millis;
 
-  uint selection = random(0, 100);
-  if (selection < 5)
-  {
-    bool door_open = random(0, 2);
 
-    uint8_t cbor_buffer[192];
-    size_t cbor_len = encodeDoor(cbor_buffer, sizeof(cbor_buffer), MQTT_CLIENT_NAME, ts, door_open);
-    apply_hmac_inplace(cbor_buffer, cbor_len);
-    MQTT_CLIENT.publish("blinds/door", cbor_buffer, cbor_len);
+    Serial.println("Sending new packet");
+    uint64_t ts = timeClient.getEpochTime();
+
+    uint64_t startTime = micros();
+    uint selection = random(0, 100);
+    if (selection < 5)
+    {
+      bool door_open = random(0, 2);
+
+      uint8_t cbor_buffer[192];
+      size_t cbor_len = encodeDoor(cbor_buffer, sizeof(cbor_buffer), MQTT_CLIENT_NAME, ts, door_open);
+      apply_hmac_inplace(cbor_buffer, cbor_len);
+      MQTT_CLIENT.publish("blinds/door", cbor_buffer, cbor_len);
+    }
+    else if (selection < 25)
+    {
+      double temperature = random(50, 80);
+
+      uint8_t cbor_buffer[192];
+      size_t cbor_len = encodeTemperature(cbor_buffer, sizeof(cbor_buffer), MQTT_CLIENT_NAME, ts, temperature);
+      apply_hmac_inplace(cbor_buffer, cbor_len);
+      MQTT_CLIENT.publish("blinds/temperature", cbor_buffer, cbor_len);
+    }
+    else
+    {
+      bool motion = random(0, 2);
+
+      uint8_t cbor_buffer[192];
+      size_t cbor_len = encodeMotion(cbor_buffer, sizeof(cbor_buffer), MQTT_CLIENT_NAME, ts, motion);
+      apply_hmac_inplace(cbor_buffer, cbor_len);
+      MQTT_CLIENT.publish("blinds/motion", cbor_buffer, cbor_len);
+    }
   }
-  else if (selection < 25)
-  {
-    double temperature = random(50, 80);
+
+  current_millis = millis();
+  long delta_time = current_millis - prev_curtain_millis;
+  if (delta_time >= curtain_update_interval && curtain_position != curtain_target) {
+    prev_curtain_millis = current_millis;
+
+    int64_t delta = curtain_target - curtain_position;
+    int64_t clamped_delta = delta_time * curtain_rate_per_second / 1000;
+    Serial.print("Clamped Delta: ");
+    Serial.print(clamped_delta);
+    Serial.println();
+
+    if (abs(delta) <= clamped_delta)
+    {
+      curtain_position = curtain_target;
+    }
+    else if (delta < 0)
+    {
+      curtain_position -= clamped_delta;
+    }
+    else
+    {
+      curtain_position += clamped_delta;
+    }
+
+    uint64_t ts = timeClient.getEpochTime();
 
     uint8_t cbor_buffer[192];
-    size_t cbor_len = encodeTemperature(cbor_buffer, sizeof(cbor_buffer), MQTT_CLIENT_NAME, ts, temperature);
+    size_t cbor_len = encodeCurtain(cbor_buffer, sizeof(cbor_buffer), MQTT_CLIENT_NAME, ts, curtain_position);
     apply_hmac_inplace(cbor_buffer, cbor_len);
-    MQTT_CLIENT.publish("blinds/temperature", cbor_buffer, cbor_len);
-  }
-  else
-  {
-    bool motion = random(0, 2);
-
-    uint8_t cbor_buffer[192];
-    size_t cbor_len = encodeMotion(cbor_buffer, sizeof(cbor_buffer), MQTT_CLIENT_NAME, ts, motion);
-    apply_hmac_inplace(cbor_buffer, cbor_len);
-    MQTT_CLIENT.publish("blinds/motion", cbor_buffer, cbor_len);
+    MQTT_CLIENT.publish("blinds/curtain", cbor_buffer, cbor_len);
   }
 
   MQTT_CLIENT.loop();
-  delay(1000);
+  delay(10);
 }
