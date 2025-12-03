@@ -10,11 +10,11 @@ The project is split into two main components:
 
 | File/Folder | Purpose | Languages |
 | :--- | :--- | :--- |
-| `sketch_dec1a/` | **ESP8266 Firmware Source.** Contains the Arduino sketch (`.ino`) with CBOR encoding, HMAC, MQTT logic, and hardware control. [cite: 9] | C++ [cite: 18] |
+| `sketch_dec1a/` | **ESP8266 Firmware Source.** Contains the Arduino sketch (`.ino`) with CBOR encoding, HMAC, MQTT logic, and hardware control. | C++ |
 | `edge.txt` | **Project Specification.** Defines the Packet Format, HMAC rules, and MQTT Topics. | Text |
-| `server.py` | **Cloud Receiver & Verifier.** Monitors device telemetry and verifies security. | Python [cite: 18] |
-| `sender.py` | **Cloud Command Publisher.** Generates secure commands to control the curtain. | Python [cite: 12] |
-| `fake_edge.py` | **Software Simulator.** Allows full local testing without physical hardware. [cite: 11] | Python |
+| `server.py` | **Cloud Receiver & Verifier.** Monitors device telemetry and verifies security. | Python |
+| `sender.py` | **Cloud Command Publisher.** Generates secure commands to control the curtain. | Python |
+| `fake_edge.py` | **Software Simulator.** Allows full local testing without physical hardware. | Python |
 | `main.py` | **Reference Implementation.** Team's validated code for CBOR/HMAC logic. | Python |
 
 -----
@@ -103,5 +103,5 @@ This setup uses `localhost` for testing `server.py` and `sender.py` against the 
 To connect the real device, you must ensure the **broker IP address is consistent everywhere**:
 
 1.  **Determine Broker Host IP:** Find the actual IP address of the machine running Mosquitto (e.g., `10.147.144.34`).
-2.  **Update ESP Firmware:** Change `MQTT_SERVER_NAME` in `sketch_dec1a/sketch_dec1a.ino` to the real IP (e.g., `"10.147.144.34"`). [cite: 9]
+2.  **Update ESP Firmware:** Change `MQTT_SERVER_NAME` in `sketch_dec1a/sketch_dec1a.ino` to the real IP (e.g., `"10.147.144.34"`).
 3.  **Update Python Scripts:** Change `BROKER_HOST` in `server.py`, `sender.py`, and `fake_edge.py` to the real IP.
