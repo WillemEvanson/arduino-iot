@@ -1,0 +1,8 @@
+# Ignore Python virtual environment
+venv/
+
+# Bytecode caches
+__pycache__/
+
+# macOS Finder metadata
+.DS_Store
