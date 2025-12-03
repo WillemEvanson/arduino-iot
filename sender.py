@@ -9,7 +9,8 @@ HMAC_KEY = bytes.fromhex(
     "AB 56 CE F7 ED 2E 50 91 EC 36 6B E2 B2 F0 71 DC"
 )
 
-BROKER_HOST = "10.147.144.34"
+# BROKER_HOST = "10.147.144.34" # Original setting
+BROKER_HOST = "localhost"
 BROKER_PORT = 1883
 
 def encode_command(cmd_type: int, device_id: str, value: int) -> bytes:
