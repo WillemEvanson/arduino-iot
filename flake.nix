@@ -18,5 +18,14 @@
         pkgs.mosquitto
       ];
     };
+    # Server configuration
+    devShells."aarch64-linux".default = pkgs.mkShellNoCC {
+      packages = [
+        (pkgs.python3.withPackages (python-pkgs: [
+          python-pkgs.paho-mqtt
+          python-pkgs.cbor2
+        ]))
+      ];
+    };
   };
 }
