@@ -5,14 +5,7 @@ import hashlib
 import time
 import random
 
-HMAC_KEY = bytes.fromhex(
-    "71 33 54 02 77 E6 27 8E 0F 52 C3 91 5A 8A AF 74 "
-    "AB 56 CE F7 ED 2E 50 91 EC 36 6B E2 B2 F0 71 DC"
-)
-
-BROKER_HOST = "localhost"
-BROKER_PORT = 1883
-DEVICE_ID = "ESP8266Client"
+from config import *
 
 def compute_hmac(data: bytes) -> bytes:
     return hmac.new(HMAC_KEY, data, hashlib.sha256).digest()

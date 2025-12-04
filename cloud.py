@@ -15,11 +15,9 @@ from wsproto.events import (
     TextMessage,
 )
 
+from config import *
 import project_crypto
 
-HOST = "10.0.146.211" # Address of Oracle Cloud Instance
-GATEWAY_PORT = 1024 # Port to listen for incoming gateway connections
-APPLICATION_PORT = 1025 # Port to listen for incoming application connections
 
 def main():
     temperature_history = open('temperature_history.txt', 'a+')
@@ -31,7 +29,7 @@ def main():
         False,
         "cloud",
         "gateway",
-        HOST,
+        INTERNAL_CLOUD_IP,
         GATEWAY_PORT
     )
 
@@ -47,7 +45,7 @@ def main():
         False,
         "cloud",
         "application",
-        HOST,
+        INTERNAL_CLOUD_IP,
         APPLICATION_PORT
     )
 

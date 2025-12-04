@@ -18,20 +18,8 @@ from wsproto.events import (
     TextMessage,
 )
 
+from config import *
 import project_crypto
-
-# Shared HMAC key from sketch_dec1a.ino / main.py
-HMAC_KEY = bytes.fromhex(
-    "71 33 54 02 77 E6 27 8E 0F 52 C3 91 5A 8A AF 74 "
-    "AB 56 CE F7 ED 2E 50 91 EC 36 6B E2 B2 F0 71 DC"
-)
-
-# BROKER_HOST = "10.147.144.34" # Original setting
-BROKER_HOST = "localhost"
-BROKER_PORT = 1883
-
-CLOUD_IP = "64.181.223.164"
-GATEWAY_PORT = 1024
 
 cloud_socket = None
 cloud_websocket = None
@@ -113,12 +101,12 @@ def main():
         True,
         "gateway",
         "cloud",
-        CLOUD_IP,
+        EXTERNAL_CLOUD_IP,
         GATEWAY_PORT
     )
 
     cloud_websocket = WSConnection(ConnectionType.CLIENT)
-    cloud_socket.sendall(cloud_websocket.send(Request(host=CLOUD_IP, target="server")))
+    cloud_socket.sendall(cloud_websocket.send(Request(host=EXTERNAL_CLOUD_IP, target="server")))
 
     incoming_text = ""
     try:
