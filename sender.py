@@ -1,59 +1,77 @@
-import paho.mqtt.client as mqtt
-import cbor2
-import hmac
-import hashlib
-import time
+import ssl
+import socket
+import json
+
+from wsproto import WSConnection
+from wsproto.connection import ConnectionType
+from wsproto.events import (
+    AcceptConnection,
+    RejectConnection,
+    CloseConnection,
+    Message,
+    Ping,
+    Pong,
+    Request,
+    TextMessage,
+)
 
 from config import *
+import project_crypto
 
-def encode_command(cmd_type: int, device_id: str, value: int) -> bytes:
-    """
-    Create a CBOR command packet with HMAC.
-    cmd_type: 1 for curtain command (per existing main.py)
-    value: curtain position in [0, 100]
-    """
-    if not (0 <= value <= 100):
-        raise ValueError("Curtain position must be in [0, 100]")
 
-    timestamp = int(time.time())
-    empty_hmac = bytes(32)
+def main():
+    cloud_socket = project_crypto.construct_ssl_socket(
+        True,
+        "application",
+        "cloud",
+        EXTERNAL_CLOUD_IP,
+        APPLICATION_PORT
+    )
 
-    array = [cmd_type, device_id, timestamp, value, empty_hmac]
-    encoded_without_hmac = cbor2.dumps(array)
+    cloud_websocket = WSConnection(ConnectionType.CLIENT)
+    cloud_socket.sendall(cloud_websocket.send(Request(host=EXTERNAL_CLOUD_IP, target = "server")))
 
-    checked_bytes = encoded_without_hmac[:-32]
-    mac = hmac.new(HMAC_KEY, checked_bytes, hashlib.sha256).digest()
-
-    full_array = [cmd_type, device_id, timestamp, value, mac]
-    return cbor2.dumps(full_array)
-
-def send_curtain_position(position: int, device_id: str = "ESP8266Client"):
-    """
-    Sends a curtain-position command (TYPE = 1) on blinds/commands.
-    ESP receives it in callback(), validates HMAC, clamps to [0,100],
-    and publishes blinds/curtain with TYPE = 4.
-    """
-    payload = encode_command(1, device_id, position)
-
-    client = mqtt.Client()
+    incoming_text = ""
     try:
-        client.connect(BROKER_HOST, BROKER_PORT, 60)
-        client.loop_start()
+        while True:
+            in_data = cloud_socket.recv(4096)
+            cloud_websocket.receive_data(in_data)
 
-        topic = "blinds/commands"
-        result = client.publish(topic, payload, qos=1)
-        result.wait_for_publish()
-        print(f"Published curtain command: {position}% to {topic} ({len(payload)} bytes)")
+            for event in cloud_websocket.events():
+                if isinstance(event, AcceptConnection):
+                    print("Cloud Websocket established")
+                    
+                    subscriptions = {
+                        "subscribe_temperature": True,
+                        "subscribe_motion": True,
+                        "subscribe_door": True,
+                        "subscribe_curtain": True
+                    }
+                    message = json.dumps(subscriptions)
+                    out_data = cloud_websocket.send(Message(data=message))
 
-        time.sleep(0.5)
+                    cloud_socket.sendall(out_data)
+
+                elif isinstance(event, RejectConnection):
+                    print("Cloud Websocket rejected")
+                    raise Exception("cloud websocket connection rejected")
+                elif isinstance(event, CloseConnection):
+                    print("Cloud connection closed: code={} reason={}".format(
+                        event.code, event.reason
+                    ))
+                    cloud_socket.send(cloud_websocket.send(event.response()))
+                elif isinstance(event, Ping):
+                    cloud_socket.send(cloud_websocket.send(event.response()))
+                elif isinstance(event, TextMessage):
+                    incoming_text += event.data
+                    if event.message_finished:
+                        print(incoming_text)
+                        incoming_text = ""
+                else:
+                    print("Unsupported event: {event!r}")
+
     except Exception as e:
-        print(f"Failed to send command: {e}")
-    finally:
-        client.loop_stop()
-        client.disconnect()
+        print(f"Failed to run application: {e}")
 
 if __name__ == "__main__":
-    # Sample commands to run...:
-    send_curtain_position(100)
-    send_curtain_position(50)
-    send_curtain_position(0)
+    main()
