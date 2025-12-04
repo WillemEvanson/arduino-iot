@@ -1,0 +1,4 @@
+basicConstraints = critical,CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = DNS:laptop.local
