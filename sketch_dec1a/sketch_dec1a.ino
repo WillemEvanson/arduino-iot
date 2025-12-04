@@ -24,9 +24,6 @@ const char *MQTT_CLIENT_NAME = "ESP8266Client";
 const char *MQTT_SERVER_NAME = "10.42.0.1";
 const int MQTT_PORT = 1883;
 
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", 0, 60000);
-
 WiFiClient WIFI_CLIENT;
 PubSubClient MQTT_CLIENT(WIFI_CLIENT);
 
@@ -271,7 +268,12 @@ void setup()
   }
 
   // Get time
-  timeClient.begin();
+  struct tm timeinfo;
+  configTime(0, 0, "pool.ntp.org");
+  while (!getLocalTime(&timeinfo)) {
+    Serial.println("Waiting for time...");
+    delay(1000);
+  }
 
   // Connect to MQTT
   Serial.print("Connecting to MQTT Server...");
@@ -298,9 +300,8 @@ void loop()
   if (current_millis - prev_update_millis >= update_interval) {
     prev_update_millis = current_millis;
 
-
     Serial.println("Sending new packet");
-    uint64_t ts = timeClient.getEpochTime();
+    uint64_t ts = time(nullptr);
 
     uint64_t startTime = micros();
     uint selection = random(0, 100);
@@ -340,9 +341,6 @@ void loop()
 
     int64_t delta = curtain_target - curtain_position;
     int64_t clamped_delta = delta_time * curtain_rate_per_second / 1000;
-    Serial.print("Clamped Delta: ");
-    Serial.print(clamped_delta);
-    Serial.println();
 
     if (abs(delta) <= clamped_delta)
     {
@@ -357,7 +355,7 @@ void loop()
       curtain_position += clamped_delta;
     }
 
-    uint64_t ts = timeClient.getEpochTime();
+    uint64_t ts = time(nullptr);
 
     uint8_t cbor_buffer[192];
     size_t cbor_len = encodeCurtain(cbor_buffer, sizeof(cbor_buffer), MQTT_CLIENT_NAME, ts, curtain_position);
