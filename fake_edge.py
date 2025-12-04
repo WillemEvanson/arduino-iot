@@ -3,6 +3,7 @@ import cbor2
 import hmac
 import hashlib
 import time
+import random
 
 HMAC_KEY = bytes.fromhex(
     "71 33 54 02 77 E6 27 8E 0F 52 C3 91 5A 8A AF 74 "
@@ -37,19 +38,29 @@ def verify_packet(data: bytes):
     msg_type, dev_id, ts, value, _sig = decoded
     return msg_type, dev_id, ts, value
 
-def encode_curtain_status(value: int) -> bytes:
-    # Simulate encodeCurtain from the ESP:
-    # [4, DEVICE_ID, timestamp, curtain_value, signature]
-    value = max(0, min(100, int(value)))  # clamp 0–100
+def encode_packet(kind: int, value):
     ts = int(time.time())
     empty_sig = bytes(32)
 
-    arr = [4, DEVICE_ID, ts, value, empty_sig]
+    arr = [kind, DEVICE_ID, ts, value, empty_sig]
     encoded_without_hmac = cbor2.dumps(arr)
     checked_bytes = encoded_without_hmac[:-32]
     mac = compute_hmac(checked_bytes)
-    full_arr = [4, DEVICE_ID, ts, value, mac]
+    full_arr = [kind, DEVICE_ID, ts, value, mac]
     return cbor2.dumps(full_arr)
+
+def encode_temperature(value: int) -> bytes:
+    return encode_packet(1, value)
+
+def encode_motion(value: bool) -> bytes:
+    return encode_packet(2, value)
+
+def encode_door(value: bool) -> bytes:
+    return encode_packet(3, value)
+
+def encode_curtain_status(value: int) -> bytes:
+    value = max(0, min(100, int(value)))  # clamp 0–100
+    return encode_packet(4, value)
 
 def on_connect(client, userdata, flags, rc):
     print("fake_edge connected with rc:", rc)
@@ -80,7 +91,33 @@ def main():
     client.on_message = on_message
 
     client.connect(BROKER_HOST, BROKER_PORT, 60)
-    client.loop_forever()
+
+    next_packet = time.time()
+    next_check = time.time()
+    while True:
+        t = time.time()
+        if t >= next_packet:
+            next_packet += 0.5
+
+            selection = random.randint(1, 4)
+
+            if selection == 1:
+                packet = encode_temperature(random.randint(50, 100))
+                category = "blinds/temperature"
+            elif selection == 2:
+                packet = encode_motion(random.choice([True, False]))
+                category = "blinds/motion"
+            else:
+                packet = encode_door(random.choice([True, False]))
+                category = "blinds/door"
+
+            client.publish(category, packet, qos=1)
+        if t >= next_check:
+            next_check += 0.1
+
+            client.loop_read()
+            client.loop_write()
+            client.loop_misc()
 
 if __name__ == "__main__":
     main()
