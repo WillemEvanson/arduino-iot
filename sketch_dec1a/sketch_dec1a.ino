@@ -20,12 +20,25 @@ const char *WIFI_SSID = "laptop";
 const char *WIFI_PASSWORD = "password";
 
 const char *MQTT_CLIENT_NAME = "ESP8266Client";
-// const char *MQTT_SERVER_NAME = "10.42.0.1";  // original
-const char *MQTT_SERVER_NAME = "10.42.0.1";
-const int MQTT_PORT = 1883;
+const char *MQTT_SERVER_NAME = "laptop.local";
+const int MQTT_PORT = 8883;
 
-WiFiClient WIFI_CLIENT;
+WiFiClientSecure WIFI_CLIENT;
 PubSubClient MQTT_CLIENT(WIFI_CLIENT);
+
+const char *ca_cert = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIIBoDCCAUegAwIBAgIUeWQ7u7gYI4k7cXrUDCrJcZjqrUYwCgYIKoZIzj0EAwIw
+JjELMAkGA1UEBhMCVVMxFzAVBgNVBAMMDldpbGxlbSBFdmFuc29uMB4XDTI1MTIw
+NDAzMDgwMVoXDTI2MTIwNDAzMDgwMVowJjELMAkGA1UEBhMCVVMxFzAVBgNVBAMM
+DldpbGxlbSBFdmFuc29uMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEF25UY6++
+xhLFzfRoUXxuTank7Z1Fv4Md7zJWoo7v/Syj95zPdEu4I9FetwGSeuYnBTAGYmRt
+ELAj4/HZeX89bqNTMFEwHQYDVR0OBBYEFN5F1XaPkPcyx904opSAbmxr91zhMB8G
+A1UdIwQYMBaAFN5F1XaPkPcyx904opSAbmxr91zhMA8GA1UdEwEB/wQFMAMBAf8w
+CgYIKoZIzj0EAwIDRwAwRAIgNBW06WyXU2l4E0T60CgH3s/n7kYWOQht/IuanMbb
+YfsCIA5BHkOZ7TN2K0WKO2FZVAX2pwaq0DesQGKrkqdX/mQz
+-----END CERTIFICATE-----
+)EOF";
 
 size_t encodeTemperature(uint8_t *buf, size_t buf_size,
                          const char *device_id,
@@ -275,6 +288,12 @@ void setup()
     delay(1000);
   }
 
+  time_t now;
+  time(&now);
+  WIFI_CLIENT.setX509Time(now);
+  BearSSL::X509List cert(ca_cert);
+  WIFI_CLIENT.setTrustAnchors(&cert);
+
   // Connect to MQTT
   Serial.print("Connecting to MQTT Server...");
   MQTT_CLIENT.setServer(MQTT_SERVER_NAME, MQTT_PORT);
@@ -288,6 +307,10 @@ void setup()
     }
     else
     {
+      char buf[256];
+      WIFI_CLIENT.getLastSSLError(buf, 256);
+      Serial.println(buf);
+
       Serial.print(".");
       delay(1000);
     }
