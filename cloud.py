@@ -174,9 +174,9 @@ def main():
                                 if "control_curtain" in message:
                                     value = message["control_curtain"]
 
-                                    message = {"control_curtain": value}
-                                    message = json.dumps(message)
-                                    gateway_out_data = gateway_ws.send(Message(data=message))
+                                    gateway_message = {"control_curtain": value}
+                                    gateway_message = json.dumps(message)
+                                    gateway_out_data = gateway_ws.send(Message(data=gateway_message))
 
                                     gateway.sendall(gateway_out_data)
 
