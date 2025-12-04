@@ -111,7 +111,7 @@ def main():
                                 timestamp = message["timestamp"]
                                 value = message["value"]
 
-                                file.write(f"{device_id} at {timestamp}: {value}\n")
+                                file.write(f"{cloud_websocket_message}\n")
                                 file.flush()
                                 new_data.append(message)
 
@@ -171,6 +171,51 @@ def main():
                                         curtain_listeners.add(application_socket)
                                     else:
                                         curtain_listeners.discard(application_socket)
+
+                                if "read_temperature_history" in message and message["read_temperature_history"]:
+                                    temperature_history.seek(0)
+                                    history = temperature_history.read()
+                                    temperature_history.seek(0, 2)
+
+                                    history = list(map(lambda s: json.loads(s), history.splitlines()))
+
+                                    history_message = {"temperature_history": history}
+                                    history_message = json.dumps(history_message)
+                                    out_data += application_websocket.send(Message(data=history_message))
+
+                                if "read_motion_history" in message and message["read_motion_history"]:
+                                    motion_history.seek(0)
+                                    history = motion_history.read()
+                                    motion_history.seek(0, 2)
+
+                                    history = list(map(lambda s: json.loads(s), history.splitlines()))
+
+                                    history_message = {"motion_history": history}
+                                    history_message = json.dumps(history_message)
+                                    out_data += application_websocket.send(Message(data=history_message))
+
+                                if "read_door_history" in message and message["read_door_history"]:
+                                    door_history.seek(0)
+                                    history = door_history.read()
+                                    door_history.seek(0, 2)
+
+                                    history = list(map(lambda s: json.loads(s), history.splitlines()))
+
+                                    history_message = {"door_history": history}
+                                    history_message = json.dumps(history_message)
+                                    out_data += application_websocket.send(Message(data=history_message))
+
+                                if "read_curtain_history" in message and message["read_curtain_history"]:
+                                    curtain_history.seek(0)
+                                    history = curtain_history.read()
+                                    curtain_history.seek(0, 2)
+
+                                    history = list(map(lambda s: json.loads(s), history.splitlines()))
+
+                                    history_message = {"curtain_history": history}
+                                    history_message = json.dumps(history_message)
+                                    out_data += application_websocket.send(Message(data=history_message))
+
                                 if "control_curtain" in message:
                                     value = message["control_curtain"]
 

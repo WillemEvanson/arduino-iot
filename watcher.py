@@ -45,7 +45,8 @@ def main():
                         "subscribe_temperature": True,
                         "subscribe_motion": True,
                         "subscribe_door": True,
-                        "subscribe_curtain": True
+                        "subscribe_curtain": True,
+                        "read_motion_history": True,
                     }
                     message = json.dumps(subscriptions)
                     out_data = cloud_websocket.send(Message(data=message))
@@ -65,7 +66,10 @@ def main():
                 elif isinstance(event, TextMessage):
                     incoming_text += event.data
                     if event.message_finished:
-                        print(incoming_text)
+                        message = json.loads(incoming_text)
+                        message = json.dumps(message, indent=2)
+
+                        print(message)
                         incoming_text = ""
                 else:
                     print("Unsupported event: {event!r}")
