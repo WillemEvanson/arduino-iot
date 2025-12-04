@@ -66,8 +66,11 @@ def main():
                 elif isinstance(event, TextMessage):
                     incoming_text += event.data
                     if event.message_finished:
-                        message = json.loads(incoming_text)
-                        message = json.dumps(message, indent=2)
+                        if len(incoming_text) >= 1000:
+                            message = json.loads(incoming_text)
+                            message = json.dumps(message, indent=2)
+                        else:
+                            message = incoming_text
 
                         print(message)
                         incoming_text = ""
