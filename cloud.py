@@ -199,6 +199,7 @@ def main():
             listeners_list = [temperature_listeners, motion_listeners, door_listeners, curtain_listeners]
             new_data_list = [new_temperature_data, new_motion_data, new_door_data, new_curtain_data]
 
+            dead_sockets = set()
             for listeners, new_data in zip(listeners_list, new_data_list):
                 for listener_socket in listeners:
                     try:
@@ -208,15 +209,16 @@ def main():
                             out_data = listener_websocket.send(Message(data=json_string))
                             listener_socket.sendall(out_data)
                     except Exception as e:
-                        print(f"Application Exception: {e}")
+                        if listener_socket not in dead_sockets:
+                            print(f"Application Exception: {e}")
 
-                        del applications[socket]
+                            del applications[listener_socket]
+                            dead_sockets.add(listener_socket)
 
-                        temperature_listeners.discard(socket)
-                        motion_listeners.discard(socket)
-                        door_listeners.discard(socket)
-                        curtain_listeners.discard(socket)
-
+            temperature_listeners -= dead_sockets
+            motion_listeners -= dead_sockets
+            door_listeners -= dead_sockets
+            curtain_listeners -= dead_sockets
 
             new_temperature_data = []
             new_motion_data = []
