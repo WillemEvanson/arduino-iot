@@ -52,12 +52,25 @@ def main():
     application_listener.listen()
 
     cloud_websocket_message = ""
+
+    applications = dict()
+
+    temperature_listeners = set()
+    motion_listeners = set()
+    door_listeners = set()
+    curtain_listeners = set()
+
+    new_temperature_data = []
+    new_motion_data = []
+    new_door_data = []
+    new_curtain_data = []
     try:
         while True:
+            listened_sockets = [gateway, application_listener] + list(applications.keys())
             readable, writable, exceptional = select.select(
-                [gateway, application_listener],
+                listened_sockets,
                 [],
-                [gateway, application_listener],
+                listened_sockets,
                 1
             )
 
@@ -83,147 +96,145 @@ def main():
                                 
                                 if message["msg_type"] == 1:
                                     file = temperature_history
+                                    new_data = new_temperature_data
                                 elif message["msg_type"] == 2:
                                     file = motion_history
+                                    new_data = new_motion_data
                                 elif message["msg_type"] == 3:
                                     file = door_history
+                                    new_data = new_door_data
                                 elif message["msg_type"] == 4:
                                     file = curtain_history
+                                    new_data = new_curtain_data
                                 
                                 device_id = message["device_id"]
                                 timestamp = message["timestamp"]
                                 value = message["value"]
 
                                 file.write(f"{device_id} at {timestamp}: {value}\n")
+                                file.flush()
+                                new_data.append(message)
 
                                 cloud_websocket_message = ""
                         else:
                             print(f"Unknown event: {event!r}")
 
                     gateway.sendall(out_data)
+                    continue
 
-    except Exception as e:
-        print(f"Fatal exception: {e}")
+                elif socket is application_listener:
+                    application, application_address = application_listener.accept()
+                    print(f"Application connected from {application_address[0]}:{application_address[1]}")
+
+                    applications[application] = (WSConnection(ConnectionType.SERVER), "")
+                    continue
+
+                # Socket must be an application socket.
+                try:
+                    application_socket = socket
+                    application_websocket, application_data = applications[socket]
+                    in_data = application_socket.recv(4096)
+                    application_websocket.receive_data(in_data)
+
+                    out_data = b""
+                    for event in application_websocket.events():
+                        if isinstance(event, Request):
+                            print("Application: Accepting WebSocket Connection")
+                            out_data += application_websocket.send(AcceptConnection())
+                        elif isinstance(event, CloseConnection):
+                            print("Application: Connection closed")
+                            out_data += application_websocket.send(event.response())
+                        elif isinstance(event, TextMessage):
+                            print(f"Application: Received Text Message: {event.data}")
+                            application_data += format(event.data)
+                            if event.message_finished:
+                                print(application_data)
+                                message = json.loads(application_data)
+                                
+                                if "subscribe_temperature" in message:
+                                    if message["subscribe_temperature"]:
+                                        temperature_listeners.add(application_socket)
+                                    else:
+                                        temperature_listeners.discard(application_socket)
+                                if "subscribe_motion" in message:
+                                    if message["subscribe_motion"]:
+                                        motion_listeners.add(application_socket)
+                                    else:
+                                        motion_listeners.discard(application_socket)
+                                if "subscribe_door" in message:
+                                    if message["subscribe_door"]:
+                                        door_listeners.add(application_socket)
+                                    else:
+                                        door_listeners.discard(application_socket)
+                                if "subscribe_curtain" in message:
+                                    if message["subscribe_curtain"]:
+                                        curtain_listeners.add(application_socket)
+                                    else:
+                                        curtain_listeners.discard(application_socket)
+                                if "control_curtain" in message:
+                                    value = message["control_curtain"]
+
+                                    message = {"control_curtain": value}
+                                    message = json.dumps(message)
+                                    gateway_out_data = gateway_ws.send(Message(data=message))
+
+                                    gateway.sendall(gateway_out_data)
+
+                                application_data = ""
+                                    
+                        else:
+                            print("Application: Unknown event: {event!r}")
+
+                    application_socket.sendall(out_data)
+                except Exception as e:
+                    print(f"Application Exception: {e}")
+
+                    del applications[socket]
+
+                    temperature_listeners.discard(socket)
+                    motion_listeners.discard(socket)
+                    door_listeners.discard(socket)
+                    curtain_listeners.discard(socket)
+
+            listeners_list = [temperature_listeners, motion_listeners, door_listeners, curtain_listeners]
+            new_data_list = [new_temperature_data, new_motion_data, new_door_data, new_curtain_data]
+
+            for listeners, new_data in zip(listeners_list, new_data_list):
+                for listener_socket in listeners:
+                    try:
+                        listener_websocket, incoming_data = applications[listener_socket]
+                        for data in new_data:
+                            json_string = json.dumps(message)
+                            out_data = listener_websocket.send(Message(data=json_string))
+                            listener_socket.sendall(out_data)
+                    except Exception as e:
+                        print(f"Application Exception: {e}")
+
+                        del applications[socket]
+
+                        temperature_listeners.discard(socket)
+                        motion_listeners.discard(socket)
+                        door_listeners.discard(socket)
+                        curtain_listeners.discard(socket)
+
+
+            new_temperature_data = []
+            new_motion_data = []
+            new_door_data = []
+            new_curtain_data = []
 
     finally:
         gateway.close()
         gateway_listener.close()
         application_listener.close()
 
+        for application_socket in applications.keys():
+            application_socket.close()
+
         temperature_history.close()
         motion_history.close()
         door_history.close()
         curtain_history.close()
-
-
-    """
-    application_listener = project_crypto.construct_ssl_socket(
-        False,
-        "cloud",
-        "application",
-        HOST,
-        APPLICATION_PORT
-    )
-
-    application_listener.listen()
-
-
-    incoming_gateway = project_crypto.construct_ssl_socket(
-        False,
-        "cloud",
-        "gateway",
-        HOST,
-        GATEWAY_PORT
-    )
-    incoming_applications = project_crypto.construct_ssl_socket(
-        False,
-        "cloud",
-        "application",
-        HOST,
-        APPLICATION_PORT
-    )
-
-    incoming_gateway.listen()
-    incoming_applications.listen()
-
-    active_sockets = [incoming_gateway, incoming_applications]
-    gateways = dict()
-    applications = dict()
-
-    print(f"Server now listening on {HOST} at {GATEWAY_PORT} and {APPLICATION_PORT}")
-    try:
-        while active_sockets:
-            readable, writable, exceptional = select.select(
-                active_sockets, # Sockets to be monitored for readability
-                [], # Sockets to be monitored for writability (we don't carry about that)
-                active_sockets, # Sockets to be monitored for exceptional conditions
-                1 # The timeout
-            )
-
-            for s in readable:
-                try:
-                    if s is incoming_gateway:
-                        conn, addr = s.accept()
-
-                        active_sockets.append(conn)
-                        print(f"Accepted gateway connection from {addr}")
-
-                    elif s is incoming_applications:
-                        socket, addr = s.accept()
-
-                        config = h2.config.H2Configuration(client_side=False)
-                        connection = h2.connection.H2Connection(config=config)
-
-                        connection.initiate_connection()
-                        socket.sendall(connection.data_to_send())
-
-                        active_sockets.append(socket)
-                        applications[socket] = connection
-                        print(f"Accepted application connection from {addr}")
-
-                    elif s in gateways:
-                        # Handle incoming gateway data
-                        1 + 1
-
-                    elif s in applications:
-                        application_connection = applications[s]
-
-                        # Handle incoming application requests
-                        data = s.recv(65535)
-                        if not data:
-                            break
-
-                        events = application_connection.receive_data(data)
-                        for event in events:
-                            print(event)
-                            if isinstance(event, h2.events.RequestReceived):
-                                1 + 1
-
-                except Exception as e:
-                    print(f"Handling exception: {e}")
-                    if s in gateways:
-                        del gateways[s]
-                    elif s in applications:
-                        del applications[s]
-
-                    if s is not incoming_gateway and s is not incoming_applications:
-                        active_sockets.remove(s)
-                        s.close()
-
-            for s in exceptional:
-                print(f"Handling exceptional condition for {s.getpeername()}")
-                active_sockets.remove(s)
-                s.close()
-
-    
-    except Exception as e:
-        print(f"Fatal exception: {e}")
-
-    finally:
-        incoming_gateway.close()
-        incoming_applications.close()
-    """
-
 
 if __name__ == "__main__":
     main()
