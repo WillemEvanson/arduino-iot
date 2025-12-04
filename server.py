@@ -3,6 +3,23 @@ import cbor2
 import hmac
 import hashlib
 
+import json
+import select
+
+from wsproto import WSConnection
+from wsproto.connection import ConnectionType
+from wsproto.events import (
+    AcceptConnection,
+    CloseConnection,
+    Message,
+    Ping,
+    Pong,
+    Request,
+    TextMessage,
+)
+
+import project_crypto
+
 # Shared HMAC key from sketch_dec1a.ino / main.py
 HMAC_KEY = bytes.fromhex(
     "71 33 54 02 77 E6 27 8E 0F 52 C3 91 5A 8A AF 74 "
@@ -12,6 +29,13 @@ HMAC_KEY = bytes.fromhex(
 # BROKER_HOST = "10.147.144.34" # Original setting
 BROKER_HOST = "localhost"
 BROKER_PORT = 1883
+
+CLOUD_IP = "64.181.223.164"
+GATEWAY_PORT = 1024
+
+cloud_socket = None
+cloud_websocket = None
+cloud_data_to_send = []
 
 def verify_and_parse_packet(packet_bytes):
     """Verify HMAC-SHA256 and return [type, device_id, timestamp, value]."""
@@ -73,15 +97,84 @@ def on_message(client, userdata, msg):
     else:
         print(f"  Unknown type {msg_type} with value: {value}")
 
+    cloud_data_to_send.append({
+        "msg_type": msg_type,
+        "device_id": device_id,
+        "timestamp": timestamp,
+        "value": value,
+    })
+
 def main():
     client = mqtt.Client()
     client.on_connect = on_connect
     client.on_message = on_message
 
+    cloud_socket = project_crypto.construct_ssl_socket(
+        True,
+        "gateway",
+        "cloud",
+        CLOUD_IP,
+        GATEWAY_PORT
+    )
+
+    cloud_websocket = WSConnection(ConnectionType.CLIENT)
+    cloud_socket.sendall(cloud_websocket.send(Request(host=CLOUD_IP, target="server")))
+
+    incoming_text = ""
     try:
         print(f"Connecting to MQTT broker at {BROKER_HOST}:{BROKER_PORT}...")
         client.connect(BROKER_HOST, BROKER_PORT, 60)
-        client.loop_forever()
+
+        while True:
+            readable, writable, exceptional = select.select(
+                [cloud_socket, client.socket()],
+                [cloud_socket],
+                [cloud_socket, client.socket()],
+                1,
+            )
+
+            for socket in readable:
+                if socket is cloud_socket:
+                    in_data = cloud_socket.recv(4096)
+                    cloud_websocket.receive_data(in_data)
+
+                    for event in cloud_websocket.events():
+                        if isinstance(event, AcceptConnection):
+                            print("Cloud Websocket established")
+                        elif isinstance(event, RejectionConnection):
+                            print("Cloud Websocket rejected")
+                            raise Exception("cloud websocket connection rejected")
+                        elif isinstance(event, CloseConnection):
+                            print("Cloud connection closed: code={} reason={}".format(
+                                event.code, event.reason
+                            ))
+                            cloud_socket.send(cloud_websocket.send(event.response()))
+                        elif isinstance(event, Ping):
+                            cloud_socket.send(cloud_websocket.send(event.response()))
+                        elif isinstance(event, TextMessage):
+                            print("Received JSON data")
+                            incoming_text += event.data
+                            if event.message_finished:
+                                print(incoming_text)
+                                incoming_text = ""
+                        else:
+                            print("Unsupported event: {event!r}")
+
+                elif socket is client.socket():
+                    client.loop_read()
+                    client.loop_write()
+                    client.loop_misc()
+
+            for socket in writable:
+                if socket is cloud_socket and len(cloud_data_to_send) is not 0:
+                    data = cloud_data_to_send.pop(0)
+
+                    json_string = json.dumps(data)
+                    out_data = cloud_websocket.send(Message(data=json_string))
+
+                    cloud_socket.sendall(out_data)
+
+
     except Exception as e:
         print(f"Failed to run server: {e}")
 
