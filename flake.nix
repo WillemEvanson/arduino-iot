@@ -13,6 +13,7 @@
         (pkgs.python3.withPackages (python-pkgs: [
           python-pkgs.paho-mqtt
           python-pkgs.cbor2
+          python-pkgs.wsproto
         ]))
 
         pkgs.mosquitto
