@@ -41,7 +41,7 @@ logout for it to take effect. The serial port is usually `/dev/ttyUSB*`.
 6. **MQTT Setup:**
    * Broker Host: Set `MQTT_SERVER_NAME` to the DNS name. This is currently `laptop.local`.
    * TLS: Copy the CA certificate into the `ca_cert` variable.
-   * HMAC: Generate a set of 32 or more random bytes. Put these bytes into `HMAC_KEY`.
+   * HMAC: Generate a set of 32+ random bytes. Put these bytes into `HMAC_KEY`.
 7. **Flash the Firmware:** Press the `Upload` button.
 
 ### Gateway (MQTT Broker)
@@ -192,7 +192,7 @@ python cloud.py
 **Objective:** Central secure storage and control.
 
 **Hardware:** Cloud server (e.g., Oracle Cloud Free Tier).
-config
+
 **Functions:**
 
 - Receive and store telemetry from the gateway.
