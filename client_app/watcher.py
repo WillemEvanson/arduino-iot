@@ -1,6 +1,8 @@
 import ssl
 import socket
 import json
+import sys
+import os
 
 from wsproto import WSConnection
 from wsproto.connection import ConnectionType
@@ -14,6 +16,11 @@ from wsproto.events import (
     Request,
     TextMessage,
 )
+
+# Add common to import path
+common_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'common'))
+if common_path not in sys.path:
+    sys.path.insert(0, common_path)
 
 from config import *
 import project_crypto

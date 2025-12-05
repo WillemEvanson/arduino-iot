@@ -15,9 +15,8 @@ from wsproto.events import (
     TextMessage,
 )
 
-from config import *
-import project_crypto
-
+from common.config import *
+from common import project_crypto
 
 def main():
     temperature_history = open('temperature_history.txt', 'a+')

@@ -20,8 +20,8 @@ from wsproto.events import (
     TextMessage,
 )
 
-from config import *
-import project_crypto
+from common.config import *
+from common import project_crypto
 
 cloud_socket = None
 cloud_websocket = None

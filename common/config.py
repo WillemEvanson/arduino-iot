@@ -1,4 +1,3 @@
-
 HMAC_KEY = bytes.fromhex(
     "71 33 54 02 77 E6 27 8E 0F 52 C3 91 5A 8A AF 74 "
     "AB 56 CE F7 ED 2E 50 91 EC 36 6B E2 B2 F0 71 DC"
