@@ -1,107 +1,214 @@
-## IoT Curtain Control System (Cloud & Edge)
+## IoT Curtain Control System
 
-This repository contains the code for our secure IoT curtain control system, which includes both the **edge device firmware** and the **cloud-side monitoring and control applications**.
+This repository contains the secure IoT curtain control system, which includes a:
+* Edge device (Arduino/ESP8266) simulating sensing and curtain control.
+* Gateway server for MQTT translation and cloud communication.
+* Cloud server for secure data storage, command authentication, and historical telemetry access.
 
 -----
 
 ## Project Structure & Key Files
 
-The project is split into two main components:
+The project is split into a few main components:
 
 | File/Folder | Purpose | Languages |
 | :--- | :--- | :--- |
 | `sketch_dec1a/` | **ESP8266 Firmware Source.** Contains the Arduino sketch (`.ino`) with CBOR encoding, HMAC, MQTT logic, and hardware control. | C++ |
-| `edge.txt` | **Project Specification.** Defines the Packet Format, HMAC rules, and MQTT Topics. | Text |
-| `server.py` | **Cloud Receiver & Verifier.** Monitors device telemetry and verifies security. | Python |
-| `sender.py` | **Cloud Command Publisher.** Generates secure commands to control the curtain. | Python |
-| `fake_edge.py` | **Software Simulator.** Allows full local testing without physical hardware. | Python |
-| `main.py` | **Reference Implementation.** Team's validated code for CBOR/HMAC logic. | Python |
+| `gateway.py` | **Gateway Hub.** Monitors device telemetry and moves packets between MQTT broker and cloud. | Python |
+| `cloud.py` | **Cloud.** Receives and stores device telemetry. Forwards authenticated commands to gateway service. Grants access to historical telemetry data. | Python |
+| `client_app/curtain-controller.py` | **Cloud Command Publisher.** Generates secure commands to control the curtain. | Python |
+| `client_app/watcher.py` | **Cloud Command Publisher.** Displays the data received by the cloud server. | Python |
+| `testing/fake_edge.py` | **Software Simulator.** Allows full local testing without physical hardware. | Python |
 
 -----
 
-## Shared Security: HMAC-SHA256
+## Environment Setup
 
-All components (firmware and cloud applications) enforce security by sharing the identical 32-byte HMAC key and following the same packet signing/verification procedure.
+### Arduino / ESP8266
 
-The HMAC is computed over **all encoded CBOR bytes except the final 32-byte signature field** (`buf[0 : array_end - 32]`).
+1. **Install Arduino IDE:** [Arduino IDE Download](https://www.arduino.cc/en/software/#ide)
+2. **Prepare For Flashing:** [Arduino IDE Setup](http://www.hiletgo.com/ProductDetail/1906570.html)
+3. **Add Required Libraries:**
+   * ArduinoBearSSL
+   * ArduinoECCX08
+   * PubSubClient
+   * TinyCBOR
+4. **Serial Port (Linux):** Add your user account to the `dialout` group. You may need to
+logout for it to take effect. The serial port is usually `/dev/ttyUSB*`.
+5. **Wi-Fi Setup:**
+   * Set `WIFI_SSID` and `WIFI_PASSWORD` in the Arduino sketch.
+   * Ensure DHCP assigns a valid IP.
+6. **MQTT Setup:**
+   * Broker Host: Set `MQTT_SERVER_NAME` to the DNS name. This is currently `laptop.local`.
+   * TLS: Copy the CA certificate into the `ca_cert` variable.
+   * HMAC: Generate a set of 32 or more random bytes. Put these bytes into `HMAC_KEY`.
+7. **Flash the Firmware:** Press the `Upload` button.
 
-```python
-HMAC_KEY = bytes.fromhex(
-    "71 33 54 02 77 E6 27 8E 0F 52 C3 91 5A 8A AF 74 "
-    "AB 56 CE F7 ED 2E 50 91 EC 36 6B E2 B2 F0 71 DC"
-)
+### Gateway (MQTT Broker)
+1. **Install Mosquitto:** The MQTT broker is used to bridge communications between the Arduino
+and the Python gateway.
+2. **Prepare for Key Creation:** Create `server.ext` with the following text. Change `laptop.local`
+to the DNS address of the gateway.
+```text
+basicConstraints = critical,CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = DNS:laptop.local
+```
+3. **Create the CA Certificate & Keys:** This will create the necessary keys for a private CA
+and a server certificate that can handle TLS.
+```bash
+openssl ecparam -genkey -name prime256v1 -out ca.key
+openssl req -x509 -new nodes -key ca.key -sha256 -days 365 -out ca.crt
+
+openssl ecparam -genkey -name prime256v1 -out server.key
+openssl req -new -key server.key -out server.csr
+openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 365 -sha256 -extfile server.ext
+```
+4. **Finish Setup:** Move the key files to a protected directory and put the following into
+the Mosquitto configuration file.
+```ini
+# Arduino - MQTT Broker
+listener 8883
+certfile /etc/mosquitto/certs/server.crt
+keyfile /etc/mosquitto/certs/server.key
+allow_anonymous true
+tls_version tlsv1.2
+
+# MQTT Broker - Gateway Service
+listener 1883 127.0.0.1
+allow_anonymous true
 ```
 
-## Cloud Component Documentation
+### Python Environment (Gateway & Cloud)
 
-### 1\. `server.py` – Cloud Monitor & Verifier
+1. **Create a virtual environment:**
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+2. **Install dependencies:**
+```bash
+pip install paho-mqtt cbor2 wsproto
+```
 
-Functions as the primary cloud monitoring service. It:
+3. **Update Configuration:** Update the parameters in `common/config.py`.
+   * Update `HMAC_KEY` to the Arduino's `HMAC_KEY`.
+   * Update `INTERNAL_CLOUD_IP` and `EXTERNAL_CLOUD_IP` to the IP address's seen
+   within the cloud.
+   * Update `GATEWAY_PORT` and `APPLICATION_PORT` if necessary.
 
-  * Subscribes to all device telemetry topics (`blinds/temperature`, `blinds/motion`, `blinds/door`, `blinds/curtain`).
-  * Verifies the HMAC-SHA256 signature on every incoming packet.
-  * Decodes the CBOR array structure: `[type, device_id, timestamp, value, signature]`.
-  * Interprets and prints human-readable sensor and status updates (Types 1–4).
+3. **Install Certificates:** Place the TLS/mTLS certificates in a folder and update `gateway.py`
+and `cloud.py` paths accordingly.
 
-### 2\. `sender.py` – Cloud Command Publisher
+4. **Run Gateway / Cloud**
+```bash
+# Gateway
+python server.py
 
-Used to send control commands securely from the cloud to the device. It:
+# Cloud
+python cloud.py
+```
+---
 
-  * Constructs a CBOR control packet (using **Type 1** for curtain commands).
-  * Applies a secure HMAC-SHA256 signature.
-  * Publishes the signed command packet to the control topic: `blinds/commands`.
+## Client Applications
 
-### 3\. `fake_edge.py` – Software Simulator
+### 1\. `client_app/curtain_controller.py` - Cloud Command Publisher
+* Randomly generates curtain values and sends them to the cloud.
+* Used for demonstrating curtain and command handling.
 
-A utility to test the full cloud pipeline locally without the physical ESP8266 hardware. It:
+### 2\. `client_app/watcher.py` - Cloud Monitor
+* Can subscribe to all device telemetry topics (`blinds/temperature`, `blinds/motion`, `blinds/door`, `blinds/curtain`).
+* Can download historical data from the cloud server and display it.
 
-  * Subscribes to `blinds/commands` to mimic the ESP's reception.
-  * Verifies the incoming packet's HMAC.
-  * Publishes a simulated **Curtain Status (Type 4)** packet on `blinds/curtain` as a command acknowledgment.
+### 3\. `testing/fake_edge.py` - Software Simulator
+* Simulates much of the functionality of the Arduino.
+* Used to test the other components without access to the Arduino.
 
------
+---
 
-## Setup & Run Instructions
+## Module Descriptions
 
-### Prerequisites
+### Arduino Sensor Node
 
-1.  **MQTT Broker:** Install **Mosquitto** (`brew install mosquitto` on macOS).
-2.  **Python Libraries:** Set up a virtual environment and install dependencies:
-    ```bash
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install paho-mqtt cbor2
-    ```
+**Objective:** Acts as the edge device providing sensor readings and receiving curtain commands.
 
-### Running the Cloud Simulation (Localhost)
+**Hardware:** Arduino/ESP8266 board with Wi-Fi.
 
-This setup uses `localhost` for testing `server.py` and `sender.py` against the `fake_edge.py` simulator.
+**Simulated / Real Data:**
 
-1.  **Start Mosquitto Broker** (Terminal 1)
-    ```bash
-    mosquitto -v
-    ```
-2.  **Start Cloud Monitor** (`server.py`) (Terminal 2)
-    ```bash
-    source venv/bin/activate
-    python server.py
-    ```
-3.  **Start Edge Simulator** (`fake_edge.py`) (Terminal 3)
-    ```bash
-    source venv/bin/activate
-    python fake_edge.py
-    ```
-4.  **Send Cloud Commands** (`sender.py`) (Terminal 4)
-    ```bash
-    source venv/bin/activate
-    python sender.py
-    ```
-    *Observation:* The commands will flow from `sender.py` $\rightarrow$ `fake_edge.py` $\rightarrow$ `server.py`, with *server.py* confirming "HMAC Verified" on the final status message.
+- Temperature (random or real)
+- Motion detected (random or real)
+- Door open/closed state (random or real)
+- Curtain position (0–100%)
 
-### Integrating with the Real ESP8266
+**Libraries Required:**
 
-To connect the real device, you must ensure the **broker IP address is consistent everywhere**:
+- ArduinoBearSSL – TLS and HMAC
+- ArduinoECCX08 – optional hardware crypto
+- PubSubClient – MQTT
+- TinyCBOR – CBOR encoding
 
-1.  **Determine Broker Host IP:** Find the actual IP address of the machine running Mosquitto (e.g., `10.147.144.34`).
-2.  **Update ESP Firmware:** Change `MQTT_SERVER_NAME` in `sketch_dec1a/sketch_dec1a.ino` to the real IP (e.g., `"10.147.144.34"`).
-3.  **Update Python Scripts:** Change `BROKER_HOST` in `server.py`, `sender.py`, and `fake_edge.py` to the real IP.
+**Security:**
+
+- TLS server certificate to connect to the gateway.
+- HMAC-SHA256 appended to each MQTT message with a pre-shared key (PSK).
+
+---
+
+### Gateway Server
+
+**Objective:** Handles secure communication between the Arduino and the cloud.
+
+**Hardware:** Laptop or local server.
+
+**Functions:**
+
+- MQTT broker (Mosquitto) for Arduino communication.
+- HMAC verification and message rejection if invalid.
+- Translation of MQTT messages to JSON.
+- Forwarding data to the cloud via WebSockets with mTLS.
+- Receiving cloud commands and publishing to Arduino via MQTT.
+
+**Libraries:**
+
+- `ssl` – mTLS
+- `json` – encoding/decoding
+- `wsproto` – WebSockets communication
+- `paho-mqtt` – MQTT communication
+- `cbor2` – decoding/encoding MQTT messages
+- `hmac` – SHA-256 HMAC verification
+
+**Security:**
+
+- TLS server certificate for encrypted Arduino connection.
+- HMAC-SHA256 for message integrity.
+- mTLS for cloud-gateway communication.
+
+---
+
+### Cloud Server
+
+**Objective:** Central secure storage and control.
+
+**Hardware:** Cloud server (e.g., Oracle Cloud Free Tier).
+config
+**Functions:**
+
+- Receive and store telemetry from the gateway.
+- Authenticate clients and retrieve historical data.
+- Relay authenticated commands to Arduino via gateway.
+
+**Communication:** WebSockets with mTLS.
+
+**Libraries:**
+
+- `ssl` – mTLS
+- `json` – encoding/decoding
+- `wsproto` – WebSockets communication
+- `hmac` – SHA-256 HMAC verification
+
+**Security:**
+
+- mTLS for all connections.
+- Authorization checks before relaying commands.
