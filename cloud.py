@@ -113,7 +113,8 @@ def main():
                                 file.write(f"{cloud_websocket_message}\n")
                                 file.flush()
                                 new_data.append(message)
-
+                                
+                                # Clear stored message to prepare to next potentially fragmented message.
                                 cloud_websocket_message = ""
                         else:
                             print(f"Unknown event: {event!r}")
@@ -224,6 +225,7 @@ def main():
 
                                     gateway.sendall(gateway_out_data)
 
+                                # Clear stored message to prepare to next potentially fragmented message.
                                 application_data = ""
                                     
                         else:
@@ -243,6 +245,7 @@ def main():
             listeners_list = [temperature_listeners, motion_listeners, door_listeners, curtain_listeners]
             new_data_list = [new_temperature_data, new_motion_data, new_door_data, new_curtain_data]
 
+            # Dead sockets is used because modification of the length of an iterator during iteration triggers an exception.
             dead_sockets = set()
             for listeners, new_data in zip(listeners_list, new_data_list):
                 for listener_socket in listeners:
@@ -259,6 +262,7 @@ def main():
                             del applications[listener_socket]
                             dead_sockets.add(listener_socket)
 
+            # Remove any dead sockets from the listener sets.
             temperature_listeners -= dead_sockets
             motion_listeners -= dead_sockets
             door_listeners -= dead_sockets

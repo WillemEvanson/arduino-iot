@@ -108,6 +108,7 @@ def on_message(client, userdata, msg):
     else:
         print(f"  Unknown type {msg_type} with value: {value}")
 
+    # Add packet to send queue.
     cloud_data_to_send.append({
         "msg_type": msg_type,
         "device_id": device_id,
@@ -166,7 +167,8 @@ def main():
                             incoming_text += event.data
                             if event.message_finished:
                                 message = json.loads(incoming_text)
-
+                                
+                                # The only messages coming this way currently will be curtain control message.
                                 if "control_curtain" in message:
                                     value = message["control_curtain"]
                                     payload = encode_command(1, DEVICE_ID, value)
@@ -183,6 +185,7 @@ def main():
 
             for socket in writable:
                 if socket is cloud_socket and len(cloud_data_to_send) != 0:
+                    # Write the first packet in the queue to the WebSocket connection.
                     data = cloud_data_to_send.pop(0)
 
                     json_string = json.dumps(data)
